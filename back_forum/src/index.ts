@@ -218,8 +218,8 @@ app.post("/posts/:postId/likes", async (req, res) => {
         return res.status(400).json({ error: "Parâmetros userId e action são obrigatórios." });
     }
 
-    if (!['like', 'dislike'].includes(action)) {
-        return res.status(400).json({ error: "Ação inválida. Use 'like' ou 'dislike'." });
+    if (!['like', 'deslike', 'removeLike', 'removeDeslike'].includes(action)) {
+        return res.status(400).json({ error: "Ação inválida. Use 'like', 'deslike', 'removeLike' ou 'removeDeslike'." });
     }
 
     try {
@@ -233,43 +233,55 @@ app.post("/posts/:postId/likes", async (req, res) => {
         await db.transaction(async trx => {
             if (action === 'like') {
                 if (existingReaction) {
-                    if (existingReaction.type === 'like') {
-                        await trx("reactions").where({ user_id: userId, post_id: postId }).del();
-                        await trx("posts").where({ id: postId }).decrement('numeroLikes', 1);
-                        return res.status(200).json({ message: "Like removido com sucesso!" });
-                    } else if (existingReaction.type === 'dislike') {
+                    if (existingReaction.type === 'deslike') {
                         await trx("reactions").where({ user_id: userId, post_id: postId }).update({ type: 'like' });
                         await trx("posts").where({ id: postId }).increment('numeroLikes', 1);
                         await trx("posts").where({ id: postId }).decrement('numeroDeslikes', 1);
                         return res.status(200).json({ message: "Deslike substituído por like com sucesso!" });
+                    } else if (existingReaction.type === 'like') {
+                        return res.status(400).json({ error: "Você já curtiu este post." });
                     }
                 } else {
                     await trx("reactions").insert({ id: uuidv4(), user_id: userId, post_id: postId, type: 'like' });
                     await trx("posts").where({ id: postId }).increment('numeroLikes', 1);
                     return res.status(200).json({ message: "Post curtido com sucesso!" });
                 }
-            } else if (action === 'dislike') {
+            } else if (action === 'deslike') {
                 if (existingReaction) {
-                    if (existingReaction.type === 'dislike') {
-                        await trx("reactions").where({ user_id: userId, post_id: postId }).del();
-                        await trx("posts").where({ id: postId }).decrement('numeroDeslikes', 1);
-                        return res.status(200).json({ message: "Deslike removido com sucesso!" });
-                    } else if (existingReaction.type === 'like') {
-                        await trx("reactions").where({ user_id: userId, post_id: postId }).update({ type: 'dislike' });
+                    if (existingReaction.type === 'like') {
+                        await trx("reactions").where({ user_id: userId, post_id: postId }).update({ type: 'deslike' });
                         await trx("posts").where({ id: postId }).increment('numeroDeslikes', 1);
                         await trx("posts").where({ id: postId }).decrement('numeroLikes', 1);
                         return res.status(200).json({ message: "Like substituído por deslike com sucesso!" });
+                    } else if (existingReaction.type === 'deslike') {
+                        return res.status(400).json({ error: "Você já descurtiu este post." });
                     }
                 } else {
-                    await trx("reactions").insert({ id: uuidv4(), user_id: userId, post_id: postId, type: 'dislike' });
+                    await trx("reactions").insert({ id: uuidv4(), user_id: userId, post_id: postId, type: 'deslike' });
                     await trx("posts").where({ id: postId }).increment('numeroDeslikes', 1);
                     return res.status(200).json({ message: "Post descurtido com sucesso!" });
+                }
+            } else if (action === 'removeLike') {
+                if (existingReaction && existingReaction.type === 'like') {
+                    await trx("reactions").where({ user_id: userId, post_id: postId }).del();
+                    await trx("posts").where({ id: postId }).decrement('numeroLikes', 1);
+                    return res.status(200).json({ message: "Like removido com sucesso!" });
+                } else {
+                    return res.status(400).json({ error: "Você não curtiu este post." });
+                }
+            } else if (action === 'removeDeslike') {
+                if (existingReaction && existingReaction.type === 'deslike') {
+                    await trx("reactions").where({ user_id: userId, post_id: postId }).del();
+                    await trx("posts").where({ id: postId }).decrement('numeroDeslikes', 1);
+                    return res.status(200).json({ message: "Deslike removido com sucesso!" });
+                } else {
+                    return res.status(400).json({ error: "Você não descurtiu este post." });
                 }
             }
         });
     } catch (error) {
-        console.error("Erro ao curtir/descurtir post:", error);
-        return res.status(500).json({ error: "Erro interno do servidor ao curtir/descurtir o post." });
+        console.error(error);
+        return res.status(500).json({ error: "Erro ao processar a solicitação." });
     }
 });
 
