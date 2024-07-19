@@ -172,7 +172,7 @@ app.get("/posts", async (req, res) => {
 
 app.post("/posts", async (req: Request, res: Response) =>{
     try {
-        const { title, content, user_id} = req.body;
+        const { title, content, user_id, numeroLikes , numeroDeslikes } = req.body;
         
         if(!title || !content ){
             return res.status(400).send("Dados Inválidos")
@@ -199,8 +199,8 @@ app.post("/posts", async (req: Request, res: Response) =>{
             content: content, 
             user_id: user_id,
             created_at: createdAt,
-            likes_count: 0,
-            dislikes_count: 0,
+            numeroLikes: numeroLikes || 0, 
+            numeroDeslikes: numeroDeslikes || 0
         });
         res.status(201).send("Post do usuário realizado com sucesso!");
 
@@ -211,47 +211,68 @@ app.post("/posts", async (req: Request, res: Response) =>{
 })
 //curtir post
 app.post("/posts/:postId/likes", async (req, res) => {
-    try {
-        const postId = req.params.postId;
-        const userId = req.body.userId;
-        const action = req.body.action; 
+    const { postId } = req.params;
+    const { userId, action } = req.body;
 
+    if (!userId || !action) {
+        return res.status(400).json({ error: "Parâmetros userId e action são obrigatórios." });
+    }
+
+    if (!['like', 'dislike'].includes(action)) {
+        return res.status(400).json({ error: "Ação inválida. Use 'like' ou 'dislike'." });
+    }
+
+    try {
         const postExists = await db("posts").where({ id: postId }).first();
         if (!postExists) {
             return res.status(404).json({ error: "O post não foi encontrado." });
         }
 
-        const existingLike = await db("likes").where({ user_id: userId, post_id: postId }).first();
-        const existingDislike = await db("dislikes").where({ user_id: userId, post_id: postId }).first();
+        const existingReaction = await db("reactions").where({ user_id: userId, post_id: postId }).first();
 
-        if (action === 'like') {
-            if (existingLike) {
-                return res.status(400).json({ error: "Você já curtiu este post." });
+        await db.transaction(async trx => {
+            if (action === 'like') {
+                if (existingReaction) {
+                    if (existingReaction.type === 'like') {
+                        await trx("reactions").where({ user_id: userId, post_id: postId }).del();
+                        await trx("posts").where({ id: postId }).decrement('numeroLikes', 1);
+                        return res.status(200).json({ message: "Like removido com sucesso!" });
+                    } else if (existingReaction.type === 'dislike') {
+                        await trx("reactions").where({ user_id: userId, post_id: postId }).update({ type: 'like' });
+                        await trx("posts").where({ id: postId }).increment('numeroLikes', 1);
+                        await trx("posts").where({ id: postId }).decrement('numeroDeslikes', 1);
+                        return res.status(200).json({ message: "Deslike substituído por like com sucesso!" });
+                    }
+                } else {
+                    await trx("reactions").insert({ id: uuidv4(), user_id: userId, post_id: postId, type: 'like' });
+                    await trx("posts").where({ id: postId }).increment('numeroLikes', 1);
+                    return res.status(200).json({ message: "Post curtido com sucesso!" });
+                }
+            } else if (action === 'dislike') {
+                if (existingReaction) {
+                    if (existingReaction.type === 'dislike') {
+                        await trx("reactions").where({ user_id: userId, post_id: postId }).del();
+                        await trx("posts").where({ id: postId }).decrement('numeroDeslikes', 1);
+                        return res.status(200).json({ message: "Deslike removido com sucesso!" });
+                    } else if (existingReaction.type === 'like') {
+                        await trx("reactions").where({ user_id: userId, post_id: postId }).update({ type: 'dislike' });
+                        await trx("posts").where({ id: postId }).increment('numeroDeslikes', 1);
+                        await trx("posts").where({ id: postId }).decrement('numeroLikes', 1);
+                        return res.status(200).json({ message: "Like substituído por deslike com sucesso!" });
+                    }
+                } else {
+                    await trx("reactions").insert({ id: uuidv4(), user_id: userId, post_id: postId, type: 'dislike' });
+                    await trx("posts").where({ id: postId }).increment('numeroDeslikes', 1);
+                    return res.status(200).json({ message: "Post descurtido com sucesso!" });
+                }
             }
-
-            await db("likes").insert({ id: uuidv4(), user_id: userId, post_id: postId });
-            
-            await db("posts").where({ id: postId }).increment('likes_count', 1);
-
-            return res.status(200).json({ message: "Post curtido com sucesso!" });
-        } else if (action === 'dislike') {
-            if (existingDislike) {
-                return res.status(400).json({ error: "Você já descurtiu este post." });
-            }
-
-            await db("dislikes").insert({ id: uuidv4(), user_id: userId, post_id: postId });
-            
-            await db("posts").where({ id: postId }).increment('dislikes_count', 1);
-
-            return res.status(200).json({ message: "Post descurtido com sucesso!" });
-        } else {
-            return res.status(400).json({ error: "Ação inválida. Use 'like' ou 'dislike'." });
-        }
+        });
     } catch (error) {
         console.error("Erro ao curtir/descurtir post:", error);
         return res.status(500).json({ error: "Erro interno do servidor ao curtir/descurtir o post." });
     }
 });
+
 
 // Endpoint para criar um novo comentário em um post específico
 app.post("/posts/:postId/comments", async (req, res) => {
