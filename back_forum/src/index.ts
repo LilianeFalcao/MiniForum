@@ -170,6 +170,16 @@ app.get("/posts", async (req, res) => {
     }
 });
 
+app.get("/posts/:postId", async (req, res) => {
+    try {
+        const result = await db("posts").select("*");
+        res.status(200).send(result);
+    } catch (error) {
+        console.error("Erro:", error);
+        res.status(500).send("Erro inesperado.");
+    }
+});
+
 app.post("/posts", async (req: Request, res: Response) =>{
     try {
         const { title, content, user_id, numeroLikes , numeroDeslikes } = req.body;
@@ -200,7 +210,7 @@ app.post("/posts", async (req: Request, res: Response) =>{
             user_id: user_id,
             created_at: createdAt,
             numeroLikes: numeroLikes || 0, 
-            numeroDeslikes: numeroDeslikes || 0
+            numeroDeslikes: numeroDeslikes || 0,
         });
         res.status(201).send("Post do usuário realizado com sucesso!");
 
@@ -287,17 +297,18 @@ app.post("/posts/:postId/likes", async (req, res) => {
 
 
 // Endpoint para criar um novo comentário em um post específico
-app.post("/posts/:postId/comments", async (req, res) => {
+app.post("/posts/:postId/comentarios", async (req, res) => {
     try {
-        const postId = req.params.postId;
+        const { postId } = req.params;
         const { user_id, content } = req.body;
 
         // Verifica se o post existe
         const postExists = await db("posts").where({ id: postId }).first();
+
         if (!postExists) {
+            
             return res.status(404).json({ error: "O post não foi encontrado." });
         }
-
         // Validação dos dados do comentário
         if (!user_id || !content) {
             return res.status(400).json({ error: "Dados inválidos para o comentário." });
@@ -328,9 +339,9 @@ app.post("/posts/:postId/comments", async (req, res) => {
 });
 
 // Endpoint para listar todos os comentários de um post específico
-app.get("/posts/:postId/comments", async (req, res) => {
+app.get("/posts/:postId/comentarios", async (req, res) => {
     try {
-        const postId = req.params.postId;
+        const { postId } = req.params;
 
         // Busca todos os comentários do post no banco de dados
         const comments = await db("comments").where({ post_id: postId });
@@ -341,3 +352,5 @@ app.get("/posts/:postId/comments", async (req, res) => {
         return res.status(500).json({ error: "Erro interno do servidor ao buscar comentários." });
     }
 });
+
+

@@ -13,6 +13,7 @@ CREATE TABLE posts (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL,
     numeroLikes INT,
     numeroDeslikes INT,
+    numeroComentarios INT,
     user_id TEXT NOT NULL,
     Foreign Key (user_id) REFERENCES users(id)
 );
